@@ -9,7 +9,7 @@ define("USER_SYSTEM", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7");
 define("USER_PLATFORM", "AppleWebKit/537.36 (KHTML, like Gecko)");
 define("USER_BROWSER", "Chrome/115.0.0.0 Safari/537.36");
 define("USER_AGENT", USER_SYSTEM . " " . USER_PLATFORM . " " . USER_BROWSER);
-define("IPINFO_TOKEN", "e4e4e42a915c14");
+define("IPINFO_TOKEN", "");
 
 readonly class Time
 {
