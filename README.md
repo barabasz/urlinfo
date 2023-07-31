@@ -4,11 +4,14 @@ A simple wrapper around [cURL](https://www.php.net/manual/en/book.curl.php) that
 
 ## Usage
 
-`sitespeed [options] URL`
+`urlinfo [options] URL`
 
 Arguments:
-    `URL`     url to request, could be with or without http(s):// prefix
+
+`URL` - url to request
+
 Options:
+
     -c or --curlinfo: print cURL info
     -h or --help:     print this info and exit
     -i of --info:     print response headers
