@@ -16,3 +16,7 @@ Options:
     -h or --help:     print this info and exit
     -i of --info:     print response headers
     -v or --version:  print version and exit
+
+## Output Example
+
+![Example of utlinfo output](https://raw.githubusercontent.com/barabasz/urlinfo/main/example.png)
