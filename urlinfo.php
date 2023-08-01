@@ -2,7 +2,7 @@
 <?php
 
 define("DEFAULT_SCHEME", "https");
-define("VERSION", "0.0.3");
+define("VERSION", "0.1");
 define("TIMEOUT", 2000);
 define("MIN_PHP_VER", 8.2);
 define("DATE_TIME", 'Y-m-d H:i e');
@@ -27,13 +27,8 @@ readonly class Time
 
     public function total() {
         $this->finished = hrtime(true);
-        $this->elapsed = $this->finished - $this->started;
-        if ($this->elapsed/1e+6 < 1000) {
-            $this->elapsedFormatted = $this->elapsed/1e+6 . " ms";
-        } else {
-            $this->elapsedFormatted = $this->elapsed/1e+9 . " s";
-        }
-        echo "Total time:\t" . $this->elapsedFormatted . PHP_EOL;
+        $this->elapsed = (int)(($this->finished - $this->started) / 1000);
+        echo colorLog("Script time:\t" . human_readable_microseconds($this->elapsed), 'c') . PHP_EOL;
     }
 }
 
@@ -41,7 +36,7 @@ readonly class Errors
 {
     private string $error_message;
 
-    public function error($error_type)
+    public function error(string $error_type): void
     {
         match ($error_type) {
             'VERSION' => $this->error_message = "SiteSpeed version " . VERSION,
@@ -56,7 +51,7 @@ readonly class Errors
             Arguments:
                 URL     url to request, could be with or without http(s):// prefix
             Options:
-                -b or --body       show body (only for unencoded text/plain)
+                -b or --body       show body (only for unencoded text/plain content)
                 -c or --curlinfo   print verbose cURL info (without SSL info)
                 -f or --forcessl   ignore SSL errors
                 -H or --help       print this info and exit
@@ -210,7 +205,8 @@ class CurlData
         }
     }
 
-    private function get_headers_arr(string $response, int $header_size) {
+    private function get_headers_arr(string $response, int $header_size): void
+    {
         $headers = substr($response, 0, $header_size);
         $headers_indexed_arr = array_filter(explode("\r\n", $headers));
         $headers_indexed_arr[0] = 'status: ' . $headers_indexed_arr[0];
@@ -222,12 +218,14 @@ class CurlData
         }
     }
 
-    private function get_body(string $response, int $header_size) {
+    private function get_body(string $response, int $header_size): void
+    {
         $body = substr($response, $header_size);
         $this->curlinfo->body = $body;
     }
 
-    private function get_ipinfo(string $ip) {
+    private function get_ipinfo(string $ip): void
+    {
         $ipinfo_url = "https://ipinfo.io/"  . $ip . "?token=" . IPINFO_TOKEN;
         $scc = stream_context_create(
             ['http'=>['timeout' => 1, 'ignore_errors' => true]]
@@ -270,7 +268,8 @@ readonly class PrintData
         }
     }
 
-    private function verboseInfo(object $data): string|bool {
+    private function verboseInfo(object $data): string|bool
+    {
         global $params;
         $info = false;
         if ($params->curlinfo) {
@@ -304,7 +303,8 @@ readonly class PrintData
         return $info;
     }
 
-    private function ipinfoInfo($data) {
+    private function ipinfoInfo($data): string
+    {
         $info = "IP info:\t";
         if (isset($data->error)) {
             $info .= colorLog('API error ' . $data->status . ': ' . $data->error->title, 'e');
@@ -323,10 +323,11 @@ readonly class PrintData
         return $info . PHP_EOL;
     }
 
-    private function serverInfo(object $data): string|bool {
+    private function serverInfo(object $data): string|bool
+    {
         if (isset($data->server) || isset($data->date)) {
             $info = "Server info:\t";
-            if (isset($data->server)) $info .= 'name ' . colorLog($data->server, 'w') . ' ';
+            if (isset($data->server) && !empty($data->server)) $info .= 'name ' . colorLog($data->server, 'w') . ' ';
             if (isset($data->date)) $info .= 'date ' . colorLog(date(DATE_TIME, strtotime($data->date)), 'w');
             return $info . PHP_EOL;
         } else {
@@ -334,7 +335,8 @@ readonly class PrintData
         }
     }
 
-    private function proxyInfo(object $data): string|bool {
+    private function proxyInfo(object $data): string|bool
+    {
         if (isset($data->via)) {
             $info = "Proxy info:\t";
             if (isset($data->via)) $info .= 'via ' . colorLog($data->via, 'w') . ' ';
@@ -344,18 +346,20 @@ readonly class PrintData
         }
     }
 
-    private function serverFlags(object $data): string|bool {
+    private function serverFlags(object $data): string|bool
+    {
         if (isset($data->strict_transport_security) || isset($data->x_frame_options)) {
             $info = "Other flags:\t";
             if (isset($data->strict_transport_security)) $info .= "HSTS " . colorLog($data->strict_transport_security, 'w') . ' ';
-            if (isset($data->x_frame_options)) $info .= "X-Frame-Options " . colorLog($data->x_frame_options, 'w');
+            if (isset($data->x_frame_options)) $info .= "X-Frame-Options " . colorLog(strtolower($data->x_frame_options), 'w');
             return $info . PHP_EOL;
         } else {
             return false;
         }
     }
 
-    private function cacheInfo(object $data): string|bool {
+    private function cacheInfo(object $data): string|bool
+    {
         if (isset($data->cache_control) || isset($data->pragma)) {
             $info = "Cache info:\t";
             if (isset($data->cache_control)) $info .= "cache control " . colorLog($data->cache_control, 'w') . ' ';
@@ -366,7 +370,8 @@ readonly class PrintData
         }
     }
 
-    private function connectionInfo($data) {
+    private function connectionInfo(object $data): string
+    {
         $info = "Connection:\t";
         $info .= colorLog($data->local_ip, "w") . ":" . colorLog($data->local_port, "w") . " → ";
         if ($data->scheme == "HTTP") {
@@ -380,7 +385,8 @@ readonly class PrintData
         return $info;
     }    
 
-    private function parseSslName(string $name, string $field) {
+    private function parseSslName(string $name, string $field)
+    {
         $re = '/([^\s=]+)\s*=\s*([^,]*)/';                                                                      
         $str = $name;
         $arr = [];
@@ -394,7 +400,8 @@ readonly class PrintData
         return $arr[$field];
     }
     
-    private function sslInfo(object $data) {
+    private function sslInfo(object $data): string
+    {
         $subject = colorLog($this->parseSslName($data->certinfo[0]["Subject"], 'CN'), "w");
         $issuer = colorLog($this->parseSslName($data->certinfo[0]["Issuer"], 'CN'), "w");
         $until = strtotime($data->certinfo[0]["Expire date"]);
@@ -410,12 +417,14 @@ readonly class PrintData
         return $info;
     }
 
-    private function requestInfo($data) {
+    private function requestInfo(object $data): string
+    {
         $requestedUrl = (strlen($data->url) > 80) ? substr($data->url, 0, 80) . "[...]" : $data->url;
         return "Request:\t" . $data->effective_method . ": " . colorLog($requestedUrl, "l") . PHP_EOL;
     }
 
-    private function responseInfo($data) {
+    private function responseInfo(object $data): string
+    {
         $response = "Response:\t";
         if (isset($data->redirect_url)) {
             $redirectUrl = (strlen($data->redirect_url) > 80) ? substr($data->redirect_url, 0, 85) . "[...]" : $data->redirect_url;
@@ -476,7 +485,7 @@ readonly class PrintData
         return $response . $status . PHP_EOL;
     }
 
-    private function human_readable_bytes(int $bytes, int $decimals = 2, $system = 'binary')
+    private function human_readable_bytes(int $bytes, int $decimals = 2, $system = 'binary'): string
     {
         $mod = ($system === 'binary') ? 1024 : 1000;
         if ($bytes > $mod) {
@@ -491,7 +500,8 @@ readonly class PrintData
         }
     }
 
-    private function contentInfo($data) {
+    private function contentInfo(object $data): string
+    {
         global $params;
 
         if (strpos($data->content_type, ';') > 0) {
@@ -516,23 +526,13 @@ readonly class PrintData
 
         $info = "Content type:\t" . $type . $charset;
         if (isset($data->headers->content_encoding)) {
-            switch ($data->headers->content_encoding) {
-                case 'gzip':
-                    $encoding = 'gzip (LZ77 with CRC)';
-                    break;
-                case 'compress':
-                    $encoding = 'compress (LZW)';
-                    break;
-                case 'deflate':
-                    $encoding = 'deflate (zlib with deflate)';
-                    break;
-                case 'br':
-                    $encoding = 'br (Brotli)';
-                    break;
-                default:
-                    $encoding = $data->content_encoding;
-                    break;
-            }
+            $encoding = match ($data->headers->content_encoding) {
+                'gzip'      => colorLog('gzip', 'w') . ' (LZ77 with CRC)',
+                'compress'  => colorLog('compress', 'w') . ' (LZW)',
+                'deflate'   => colorLog('deflate', 'w') . ' (zlib with deflate)',
+                'br'        => colorLog('br', 'w') . ' (Brotli)',
+                default     => $data->content_encoding,
+            };
             $info .= " encoded with " . colorLog($encoding, 'w');
         } else {
             $info .= " as " . colorLog('plain text', 'w');
@@ -543,26 +543,84 @@ readonly class PrintData
         return $info;
     }
 
-    private function speedInfo($data) {
-        return "Speed info..." . PHP_EOL;
+    private function speedInfo(object $data): string
+    {
+        $namelookup    = $data->namelookup_time_us;
+        $tcpconnect    = $data->connect_time_us;
+        $appconnect    = $data->appconnect_time_us;
+        $pretransfer   = $data->pretransfer_time_us;
+        $starttransfer = $data->starttransfer_time_us;
+        $totaltime     = $data->total_time_us;
+
+        $tcphandshake  = $tcpconnect - $namelookup;
+        $sslhandshake  = $appconnect - $tcpconnect;
+        $ttfb          = $starttransfer - $pretransfer;
+        $transfer      = $totaltime - $starttransfer;
+
+        if ($namelookup > 100000) {
+            $namelookup = colorLog(human_readable_microseconds($namelookup), 'be');
+        } else {
+            $namelookup = colorLog(human_readable_microseconds($namelookup), 'w');
+        }
+
+        if ($tcphandshake > 200000) {
+            $tcphandshake = colorLog(human_readable_microseconds($tcphandshake), 'be');
+        } else {
+            $tcphandshake = colorLog(human_readable_microseconds($tcphandshake), 'w');
+        }
+
+        if ($sslhandshake > 200000) {
+            $sslhandshake = colorLog(human_readable_microseconds($sslhandshake), 'be');
+        } else {
+            $sslhandshake = colorLog(human_readable_microseconds($sslhandshake), 'w');
+        }
+
+        if ($ttfb > 500000) {
+            $ttfb = colorLog(human_readable_microseconds($ttfb), 'be');
+        } else {
+            $ttfb = colorLog(human_readable_microseconds($ttfb), 'w');
+        }
+        $transfer = colorLog(human_readable_microseconds($transfer), 'w');
+        $totaltime = colorLog(human_readable_microseconds($totaltime), 'w');
+
+        $info = "Speed info\t";
+        $info .= "DNS lookup " . $namelookup;
+        $info .= " TCP handshake " . $tcphandshake;
+        if (strtolower($data->scheme) == "https") {
+            $info .= " SSL handshake " . $sslhandshake;
+        } else {
+            $info .= " no SSL handshake (HTTP)";
+        }
+        $info .= PHP_EOL . "Transfer:\t";
+        $info .= "time to first byte " . $ttfb;
+        $info .= " transfer time " . $transfer;
+        $info .= " total time " . $totaltime;
+        return $info . PHP_EOL;
+
     }
 
 }
 
-function parse_object(object $obj): string {
+function human_readable_microseconds(int $microseconds): string
+{
+    $decimals = match (true) {
+        $microseconds > 1000000 => 2,
+        $microseconds > 1000 => 1,
+        default => 0,
+    };
+    $units = array('μs', 'ms', 's');
+    $factor = floor((strlen($microseconds) - 1) / 3);
+    return sprintf("%.{$decimals}f %s", $microseconds / pow(1000, $factor), $units[$factor]);
+}
+
+function parse_object(object $obj): string
+{
     $output = '';
     foreach ($obj as $key => $val) {
         $key = ucwords(str_replace('_', ' ', $key));
         $output .= $key . ": " . colorLog($val, 'w') . PHP_EOL;
     }
     return $output;
-}
-
-function print_object(object $obj): void {
-    foreach ($obj as $key => $val) {
-        $key = ucwords(str_replace('_', ' ', $key));
-        echo $key . ": " . colorLog($val, 'w') . PHP_EOL;
-    }
 }
 
 function colorLog(string $str, string $type = 'i'): string
@@ -596,7 +654,6 @@ function colorLog(string $str, string $type = 'i'): string
 /*
 MAIN PROGRAM
 */
-
 
 try {
     $time = new Time();
