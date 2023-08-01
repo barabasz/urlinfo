@@ -26,6 +26,7 @@ Options:
 
 ![Example of utlinfo output](https://raw.githubusercontent.com/barabasz/urlinfo/main/example.png)
 
+
 ## TTFB (Time to First Byte)
 
 Time to first byte is calculated as a time between final request (GET send by the client after TCP handshake and SSL handshake) and first byte recieved (difference between `time_pretransfer` and `time_starttransfer`). 
