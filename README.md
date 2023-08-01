@@ -1,6 +1,6 @@
 # urlinfo
 
-A simple wrapper around [cURL](https://www.php.net/manual/en/book.curl.php) that allows to display the most important information about the requested url in easy-to-read form.
+`urlinfo` is a simple PHP CLI wrapper around [cURL](https://www.php.net/manual/en/book.curl.php) that allows to display the most important information about the requested url in easy-to-read form.
 
 ## Usage
 
