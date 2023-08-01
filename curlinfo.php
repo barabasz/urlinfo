@@ -2,9 +2,11 @@
 <?php
 
 define("DEFAULT_SCHEME", "https");
-define("VERSION", "0.0.2");
+define("VERSION", "0.0.3");
 define("TIMEOUT", 2000);
 define("MIN_PHP_VER", 8.2);
+define("DATE_TIME", 'Y-m-d H:i e');
+define("PHP_DEOL", PHP_EOL . PHP_EOL);
 define("USER_SYSTEM", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7");
 define("USER_PLATFORM", "AppleWebKit/537.36 (KHTML, like Gecko)");
 define("USER_BROWSER", "Chrome/115.0.0.0 Safari/537.36");
@@ -43,8 +45,8 @@ readonly class Errors
     {
         match ($error_type) {
             'VERSION' => $this->error_message = "SiteSpeed version " . VERSION,
-            'ONLY_ONE_ARGUMENT' => $this->error_message = "Too many arguments. Use -h for help.",
-            'NO_ARGUMENT' => $this->error_message = "No URL specified. Use -h for help.",
+            'ONLY_ONE_ARGUMENT' => $this->error_message = "Too many arguments. Use -H for help.",
+            'NO_ARGUMENT' => $this->error_message = "No URL specified. Use -H for help.",
             'INVALID_URL' => $this->error_message = "Incorrect URL.",
             'INVALID_SCHEME' => $this->error_message = "Only " . colorLog("http://", "i") . " and " . colorLog("https://", "i") . " schemes are allowed.",
             'CANNOT_PARSE_URL' => $this->error_message = "Cannot parse url.",
@@ -54,10 +56,15 @@ readonly class Errors
             Arguments:
                 URL     url to request, could be with or without http(s):// prefix
             Options:
-                -c or --curlinfo: print cURL info
-                -h or --help:     print this info and exit
-                -i of --info:     print response headers
-                -v or --version:  print version and exit"),
+                -b or --body       show body (only for unencoded text/plain)
+                -c or --curlinfo   print verbose cURL info (without SSL info)
+                -f or --forcessl   ignore SSL errors
+                -H or --help       print this info and exit
+                -h or --headers    print verbose response headers (without cookies and CSP)
+                -i or --ipinfo     print verbose ipinfo
+                -m or --mute       mute standard output
+                -p or --plaintext  force plain text content response
+                -v or --version    print version and exit"),
             default => $this->error_message = $error_type,
         };
        throw new Exception($this->error_message);
@@ -67,29 +74,43 @@ readonly class Errors
 readonly class Params
 { 
     public string $url;
-    public bool $info;
+    public bool $body;
+    public bool $headers;
+    public bool $ipinfo;
     public bool $curlinfo;
+    public bool $mute;
+    public bool $plaintext;
+    public bool $forcessl;
 
     public function __construct()
     {
         global $argv;
         global $error;
         $rest_index = null;
-        $short_options = "c::h::i::v::";
-        $long_options = ["curlinfo::", "help::", "info::", "version::"];
+        $short_options = "bcfhHimvp";
+        $long_options = ["body", "curlinfo", "forcessl", "help", "headers", "ipinfo", "mute", "version", "plaintext"];
         $options = getopt($short_options, $long_options, $rest_index);
         $pos_args = array_slice($argv, $rest_index);
 
         if (count($options) > 0) {
-            if(isset($options["v"]) || isset($options["version"])) $error->error('VERSION');
-            if(isset($options["h"]) || isset($options["help"])) $error->error('HELP');
-            $this->info = (isset($options["i"]) || isset($options["info"])) ? true : false;
+            if (isset($options["v"]) || isset($options["version"])) $error->error('VERSION');
+            if (isset($options["H"]) || isset($options["help"])) $error->error('HELP');
+            $this->body = (isset($options["b"]) || isset($options["body"])) ? true : false;
+            $this->forcessl = (isset($options["f"]) || isset($options["forcessl"])) ? true : false;
+            $this->headers = (isset($options["h"]) || isset($options["headers"])) ? true : false;
+            $this->ipinfo = (isset($options["i"]) || isset($options["ipinfo"])) ? true : false;
             $this->curlinfo = (isset($options["c"]) || isset($options["curlinfo"])) ? true : false;
+            $this->mute = (isset($options["m"]) || isset($options["mute"])) ? true : false;
+            $this->plaintext = (isset($options["p"]) || isset($options["plaintext"])) ? true : false;
         } else {
-            $this->info = false;
-            $this->curlinfo = false;           
+            $this->body = false;
+            $this->headers = false;
+            $this->ipinfo = false;
+            $this->curlinfo = false;
+            $this->mute = false;
+            $this->plaintext = false;      
+            $this->forcessl = false;
         }
-
         if (count($pos_args) > 1) {
             $error->error('ONLY_ONE_ARGUMENT');
         } elseif (count($pos_args) < 1) {
@@ -139,14 +160,11 @@ class CurlData
 
     public function __construct(string $url)
     {
-        global $error;
+        global $error, $params;
         $ch = curl_init();
         $headers = array(
             "Content-type: text/xml;charset=\"utf-8\"",
             "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            //"Accept-Encoding: gzip, deflate, br",
-            //"Accept-Encoding: gzip",
-            "Accept-Encoding: br;q=1.0, gzip;q=0.8, deflate;q=0.6, compress;q=0.4, *;q=0.1",
             "Accept-Language: en-GB,en-US;q=0.9,en;q=0.8,pl;q=0.7",
             "Cache-Control: no-cache",
             "Pragma: no-cache",
@@ -157,6 +175,10 @@ class CurlData
             "Sec-Fetch-Site: cross-site",
             "Sec-Fetch-User: ?1"
         );
+        if (!$params->plaintext) {
+            array_unshift($headers, "Accept-Encoding: br;q=1.0, gzip;q=0.8, deflate;q=0.6, compress;q=0.4, *;q=0.1");
+        }
+
         $options = array(
             CURLOPT_URL => $url,
             CURLOPT_HEADER => true,
@@ -164,8 +186,12 @@ class CurlData
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_USERAGENT => USER_AGENT,
             CURLOPT_CONNECTTIMEOUT => 2,
-            CURLOPT_HTTPHEADER => $headers
+            CURLOPT_HTTPHEADER => $headers,
+            
         );
+        if ($params->forcessl) {
+            $options[CURLOPT_SSL_VERIFYPEER] = false;
+        }        
         curl_setopt_array($ch, $options);
         $response = curl_exec($ch);
         if(!$response) $error->error(curl_error($ch));
@@ -174,8 +200,13 @@ class CurlData
 
         if (empty($this->curlinfo->redirect_url)) {
             $this->get_headers_arr($response, $this->curlinfo->header_size);
-            //$this->get_body($response, $this->curlinfo->header_size);
+            if ($params->body && !isset($this->curlinfo->headers->content_encoding)) {
+                $this->get_body($response, $this->curlinfo->header_size);
+            }
             $this->get_ipinfo($this->curlinfo->primary_ip);
+            $this->curlinfo->isRedirect = false;
+        } else {
+            $this->curlinfo->isRedirect = true;
         }
     }
 
@@ -214,34 +245,61 @@ readonly class PrintData
 
     public function __construct(object $data)
     {
-        echo $this->verboseInfo($data);
-        echo $this->requestInfo($data);
-        echo $this->connectionInfo($data);
-        echo $this->responseInfo($data);
-        if (isset($this->isRedirect)) {
-            echo  PHP_EOL . colorLog("Redirecting...", "c") . PHP_EOL . PHP_EOL;
-        } elseif ($data->http_code == 200) {
-            echo $this->ipinfoInfo($data->ipinfo);
-            if (strtolower($data->scheme) == "https") {
-                echo $this->sslInfo($data);
+        global $params;
+        if (!$data->isRedirect) {
+            echo $this->verboseInfo($data);
+        }
+        if (!$params->mute) {
+            echo $this->requestInfo($data);
+            echo $this->connectionInfo($data);
+            echo $this->responseInfo($data);
+            if (isset($this->isRedirect)) {
+                echo  PHP_EOL . colorLog("Redirecting...", "c") . PHP_EOL . PHP_EOL;
+            } elseif ($data->http_code == 200) {
+                echo $this->ipinfoInfo($data->ipinfo);
+                echo $this->serverInfo($data->headers);
+                echo $this->proxyInfo($data->headers);
+                echo $this->cacheInfo($data->headers);
+                if (strtolower($data->scheme) == "https") {
+                    echo $this->sslInfo($data);
+                }
+                echo $this->serverFlags($data->headers);
+                echo $this->contentInfo($data);
+                echo $this->speedInfo($data);
             }
-            echo $this->contentInfo($data);
-            echo $this->speedInfo($data);
         }
     }
 
-    private function verboseInfo($data): string {
-        $data = clone $data;
+    private function verboseInfo(object $data): string|bool {
         global $params;
+        $info = false;
         if ($params->curlinfo) {
-            $info = "cURL info:\n\n";
-            unset($data->certinfo, $data->headers, $data->ipinfo);
-            $info .= parse_object($data) . PHP_EOL;
+            $cdata = clone $data;
+            $info .= colorLog("cURL info:", 'be') . PHP_DEOL;
+            unset($cdata->body, $cdata->isRedirect, $cdata->certinfo, $cdata->headers, $cdata->ipinfo);
+            $info .= parse_object($cdata) . PHP_EOL;
+            unset($cdata);
         }
-        if ($params->info) {
-            $info = "Response headers:\n\n";
-            unset($data->headers->set_cookie, $data->headers->content_security_policy);
-            $info .= parse_object($data->headers) . PHP_EOL;
+        if ($params->headers) {
+            $hdata = clone $data;
+            $info .= colorLog("Response headers:", 'be') . PHP_DEOL;
+            unset($hdata->headers->set_cookie, $hdata->headers->content_security_policy);
+            $info .= parse_object($hdata->headers) . PHP_EOL;
+            unset($hdata);
+        }
+        if ($params->ipinfo) {
+            $idata = clone $data;
+            $info .= colorLog("IP info response:", 'be') . PHP_DEOL;
+            $info .= parse_object($idata->ipinfo) . PHP_EOL;
+            unset($idata);
+        }
+        if ($params->body) {
+            $info .= colorLog("Body content:", 'be');
+            if (isset($data->body)) {
+                $info .= PHP_DEOL . $data->body . PHP_DEOL;
+            } else {
+                $info .= "\t" . "encoded with " . colorLog($data->headers->content_encoding, 'w') . PHP_EOL;
+            }
         }
         return $info;
     }
@@ -251,7 +309,7 @@ readonly class PrintData
         if (isset($data->error)) {
             $info .= colorLog('API error ' . $data->status . ': ' . $data->error->title, 'e');
         } elseif ($data->bogon ?? false) {
-            $info .= colorLog('private class bogon IP', 'w');
+            $info .= 'private class bogon IP';
         } else {
             $info .= "company " . colorLog($data->org, 'w');
             $info .= " from " . colorLog($data->city, 'w');
@@ -263,6 +321,49 @@ readonly class PrintData
         }
 
         return $info . PHP_EOL;
+    }
+
+    private function serverInfo(object $data): string|bool {
+        if (isset($data->server) || isset($data->date)) {
+            $info = "Server info:\t";
+            if (isset($data->server)) $info .= 'name ' . colorLog($data->server, 'w') . ' ';
+            if (isset($data->date)) $info .= 'date ' . colorLog(date(DATE_TIME, strtotime($data->date)), 'w');
+            return $info . PHP_EOL;
+        } else {
+            return false;
+        }
+    }
+
+    private function proxyInfo(object $data): string|bool {
+        if (isset($data->via)) {
+            $info = "Proxy info:\t";
+            if (isset($data->via)) $info .= 'via ' . colorLog($data->via, 'w') . ' ';
+            return $info . PHP_EOL;
+        } else {
+            return false;
+        }
+    }
+
+    private function serverFlags(object $data): string|bool {
+        if (isset($data->strict_transport_security) || isset($data->x_frame_options)) {
+            $info = "Other flags:\t";
+            if (isset($data->strict_transport_security)) $info .= "HSTS " . colorLog($data->strict_transport_security, 'w') . ' ';
+            if (isset($data->x_frame_options)) $info .= "X-Frame-Options " . colorLog($data->x_frame_options, 'w');
+            return $info . PHP_EOL;
+        } else {
+            return false;
+        }
+    }
+
+    private function cacheInfo(object $data): string|bool {
+        if (isset($data->cache_control) || isset($data->pragma)) {
+            $info = "Cache info:\t";
+            if (isset($data->cache_control)) $info .= "cache control " . colorLog($data->cache_control, 'w') . ' ';
+            if (isset($data->pragma)) $info .= "pragma " . colorLog($data->pragma, 'w');
+            return $info . PHP_EOL;
+        } else {
+            return false;
+        }
     }
 
     private function connectionInfo($data) {
@@ -297,9 +398,13 @@ readonly class PrintData
         $subject = colorLog($this->parseSslName($data->certinfo[0]["Subject"], 'CN'), "w");
         $issuer = colorLog($this->parseSslName($data->certinfo[0]["Issuer"], 'CN'), "w");
         $until = strtotime($data->certinfo[0]["Expire date"]);
-        $until = colorLog(date('Y-m-d H:i e', $until), 'w');
+        if ($until < time()) {
+            $until = colorLog(date(DATE_TIME, $until), 'be');
+        } else {
+            $until = colorLog(date(DATE_TIME, $until), 'w');
+        }
         $from = strtotime($data->certinfo[0]["Start date"]);
-        $from = colorLog(date('Y-m-d H:i e', $from), 'w');
+        $from = colorLog(date(DATE_TIME, $from), 'w');
         $info = "SSL subject:\t" . "for " . $subject . " by " . $issuer . PHP_EOL;
         $info .= "SSL validity:\t" . "from " . $from . " until " . $until . PHP_EOL;
         return $info;
@@ -374,24 +479,44 @@ readonly class PrintData
     private function human_readable_bytes(int $bytes, int $decimals = 2, $system = 'binary')
     {
         $mod = ($system === 'binary') ? 1024 : 1000;
-        $units = array(
-            'binary' => array('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB','YiB',),
-            'metric' => array('B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB',),
-        );
-        $factor = floor((strlen($bytes) - 1) / 3);
-        return sprintf("%.{$decimals}f %s", $bytes / pow($mod, $factor), $units[$system][$factor]);
+        if ($bytes > $mod) {
+            $units = array(
+                'binary' => array('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB','YiB',),
+                'metric' => array('B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB',),
+            );
+            $factor = floor((strlen($bytes) - 1) / 3);
+            return sprintf("%.{$decimals}f %s", $bytes / pow($mod, $factor), $units[$system][$factor]);
+        } else {
+            return "$bytes B";
+        }
     }
 
     private function contentInfo($data) {
-        $type = colorLog($data->content_type, 'w');
-        $size = colorLog($this->human_readable_bytes($data->size_download, 2), 'w');
+        global $params;
+
+        if (strpos($data->content_type, ';') > 0) {
+            $charset = ' charset ';
+            $str_indexed_arr = array_filter(explode(";", $data->content_type));
+            $type = colorLog($str_indexed_arr[0], 'w');
+            if (count($str_indexed_arr) > 1) {
+                if (strpos($str_indexed_arr[1], '=') > 0) {
+                    $charset .= colorLog(substr($str_indexed_arr[1], strpos($str_indexed_arr[1], '=') + 1), 'w');
+                }
+            }
+        } else {
+            $type = colorLog($data->content_type, 'w');
+        }
+
+        if ($data->size_download > 1000) {
+            $size = colorLog($this->human_readable_bytes($data->size_download, 2), 'w');
+        } else {
+            $size = colorLog($this->human_readable_bytes($data->size_download, 2), 'be');
+        }
         $speed = colorLog($this->human_readable_bytes($data->speed_download, 2) . '/s', 'w');
 
-
-        $info = "Content type:\t" . $type;
-        if (isset($data->content_encoding)) {
-
-            switch ($data->content_encoding) {
+        $info = "Content type:\t" . $type . $charset;
+        if (isset($data->headers->content_encoding)) {
+            switch ($data->headers->content_encoding) {
                 case 'gzip':
                     $encoding = 'gzip (LZ77 with CRC)';
                     break;
@@ -408,10 +533,10 @@ readonly class PrintData
                     $encoding = $data->content_encoding;
                     break;
             }
-
             $info .= " encoded with " . colorLog($encoding, 'w');
         } else {
             $info .= " as " . colorLog('plain text', 'w');
+            if ($params->plaintext) $info .= " (" . colorLog('forced', 'e') . ")";
         }
         $info .= PHP_EOL . "Content size:\t" . $size;
         $info .= " downloaded at " . $speed . PHP_EOL;
@@ -440,42 +565,32 @@ function print_object(object $obj): void {
     }
 }
 
-function colorLog($str, $type = 'i'){
-    switch ($type) {
-        case 'b': //bold
-            return "\033[1m$str\033[0m";
-        break;
-        case 'e': //error
-            return "\033[31m$str\033[0m";
-        break;
-        case 'be': //bold error
-            return "\033[1m\033[31m$str\033[0m";
-        break;
-        case 's': //success
-            return "\033[32m$str\033[0m";
-        break;
-        case 'bs': //bold success
-            return "\033[1m\033[32m$str\033[0m";
-        break;
-        case 'w': //warning
-            return "\033[33m$str\033[0m";
-        break;
-        case 'bw': //bold warning
-            return "\033[1m\033[33m$str\033[0m";
-        break;  
-        case 'i': //info
-            return "\033[36m$str\033[0m";
-        break;
-        case 'l': //link
-            return "\033[4m\033[36m$str\033[0m";
-        break;
-        case 'c': //comment
-            return "\033[38;5;238m$str\033[0m";
-        break;   
-        default:
-            return $str;
-        break;
-    }
+function colorLog(string $str, string $type = 'i'): string
+{
+    $bold   = "\033[1m";
+    $underl = "\033[4m";
+
+    $clear  = "\033[0m";
+    $cyan   = "\033[36m";
+    $gray   = "\033[38;5;238m";
+    $green  = "\033[32m";
+    $red    = "\033[31m";
+    $yellow = "\033[33m";
+    
+    return match ($type) {
+        'b'  => "$bold$str$clear",          //bold
+        'e'  => "$red$str$clear",           //error
+        'be' => "$bold$red$str$clear",      //bold error
+        's'  => "$green$str$clear",         //success
+        'bs' => "$bold$green$str$clear",    //bold success
+        'w'  => "$yellow$str$clear",        //warning
+        'bw' => "$bold$yellow$str$clear",   //bold warning
+        'i'  => "$cyan$str$clear",          //info
+        'bi' => "$bold$cyan$str$clear",     //bold info
+        'l'  => "$underl$cyan$str$clear",   //link
+        'c'  => "$gray$str$clear",          //comment
+        default => $str,
+    };
 }
 
 /*
