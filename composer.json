@@ -9,10 +9,20 @@
             "src/"
         ]
     },
+    "config": {
+        "platform": {
+            "php": "8.2.0"
+        },
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "prefer-stable": true,
+    "require": {
+        "php": ">=8.2"
+    },
     "authors": [
         {
             "name": "Andrzej Barabasz"
         }
-    ],
-    "require": {}
+    ]
 }
