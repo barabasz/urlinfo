@@ -2,7 +2,7 @@
 namespace barabasz\UrlInfo;
 
 define("DEFAULT_SCHEME", "https");
-define("VERSION", "0.0.2");
+define("VERSION", "0.1.0");
 define("TIMEOUT", 2000);
 define("MIN_PHP_VER", 8.2);
 define("DATE_TIME", 'Y-m-d H:i e');
