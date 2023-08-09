@@ -1,8 +1,8 @@
-#!/usr/bin/env php
 <?php
+namespace barabasz\UrlInfo;
 
 define("DEFAULT_SCHEME", "https");
-define("VERSION", "0.1");
+define("VERSION", "0.0.2");
 define("TIMEOUT", 2000);
 define("MIN_PHP_VER", 8.2);
 define("DATE_TIME", 'Y-m-d H:i e');
@@ -13,24 +13,32 @@ define("USER_BROWSER", "Chrome/115.0.0.0 Safari/537.36");
 define("USER_AGENT", USER_SYSTEM . " " . USER_PLATFORM . " " . USER_BROWSER);
 define("IPINFO_TOKEN", "");
 
-readonly class Time
+class Time
 {
     public int $started;
     public int $finished;
     public int $elapsed;
-    public string $elapsedFormatted;
 
     public function __construct()
     {
         $this->started = hrtime(true);
     }
-
-    public function total() {
+    
+    public function __destruct()
+    {
+        global $params;
+        if (isset($params->info) && !$params->info) echo $this->total();
+    }
+    
+    public function total(): string
+    {
         $this->finished = hrtime(true);
         $this->elapsed = (int)(($this->finished - $this->started) / 1000);
-        echo colorLog("Script time:\t" . human_readable_microseconds($this->elapsed), 'c') . PHP_EOL;
+        return colorLog("Script time:\t" . human_readable_microseconds($this->elapsed), 'c') . PHP_EOL;
     }
 }
+
+class MyException extends \Exception { }
 
 readonly class Errors
 {
@@ -45,7 +53,7 @@ readonly class Errors
             'INVALID_URL' => $this->error_message = "Incorrect URL.",
             'INVALID_SCHEME' => $this->error_message = "Only " . colorLog("http://", "i") . " and " . colorLog("https://", "i") . " schemes are allowed.",
             'CANNOT_PARSE_URL' => $this->error_message = "Cannot parse url.",
-            'HELP' => $this->error_message = str_replace('            ', '', "
+            'HELP' => $this->error_message = <<< HELP
             Usage: urlinfo [options] URL
             
             Arguments:
@@ -59,11 +67,18 @@ readonly class Errors
                 -i or --ipinfo     print verbose ipinfo
                 -m or --mute       mute standard output
                 -p or --plaintext  force plain text content response
-                -v or --version    print version and exit"),
+                -v or --version    print version and exit")
+            HELP,
             default => $this->error_message = $error_type,
         };
-       throw new Exception($this->error_message);
+       throw new MyException($this->error_message . PHP_EOL);
     }
+
+    public function print(string $exception): void
+    {
+        echo PHP_EOL . $exception;
+    }
+
 }
 
 readonly class Params
@@ -76,6 +91,7 @@ readonly class Params
     public bool $mute;
     public bool $plaintext;
     public bool $forcessl;
+    public bool $info;
 
     public function __construct()
     {
@@ -88,8 +104,14 @@ readonly class Params
         $pos_args = array_slice($argv, $rest_index);
 
         if (count($options) > 0) {
-            if (isset($options["v"]) || isset($options["version"])) $error->error('VERSION');
-            if (isset($options["H"]) || isset($options["help"])) $error->error('HELP');
+            if (isset($options["v"]) || isset($options["version"])) {
+                $error->error('VERSION');
+                $this->info = true;
+            }
+            if (isset($options["H"]) || isset($options["help"])) {
+                $error->error('HELP');
+                $this->info = true;
+            }
             $this->body = (isset($options["b"]) || isset($options["body"])) ? true : false;
             $this->forcessl = (isset($options["f"]) || isset($options["forcessl"])) ? true : false;
             $this->headers = (isset($options["h"]) || isset($options["headers"])) ? true : false;
@@ -98,6 +120,7 @@ readonly class Params
             $this->mute = (isset($options["m"]) || isset($options["mute"])) ? true : false;
             $this->plaintext = (isset($options["p"]) || isset($options["plaintext"])) ? true : false;
         } else {
+            $this->info = false;
             $this->body = false;
             $this->headers = false;
             $this->ipinfo = false;
@@ -210,7 +233,7 @@ class CurlData
         $headers = substr($response, 0, $header_size);
         $headers_indexed_arr = array_filter(explode("\r\n", $headers));
         $headers_indexed_arr[0] = 'status: ' . $headers_indexed_arr[0];
-        $this->curlinfo->headers = new stdClass();
+        $this->curlinfo->headers = new \stdClass();
         foreach ($headers_indexed_arr as $value) {
             if(false !== ($matches = explode(':', $value, 2))) {
               $this->curlinfo->headers->{strtolower(str_replace('-', '_', $matches[0]))} = trim($matches[1]);
@@ -244,6 +267,7 @@ readonly class PrintData
     public function __construct(object $data)
     {
         global $params;
+        echo PHP_EOL;
         if (!$data->isRedirect) {
             echo $this->verboseInfo($data);
         }
@@ -252,7 +276,7 @@ readonly class PrintData
             echo $this->connectionInfo($data);
             echo $this->responseInfo($data);
             if (isset($this->isRedirect)) {
-                echo  PHP_EOL . colorLog("Redirecting...", "c") . PHP_EOL . PHP_EOL;
+                echo  PHP_EOL . colorLog("Redirecting...", "c") . PHP_EOL;
             } elseif ($data->http_code == 200) {
                 echo $this->ipinfoInfo($data->ipinfo);
                 echo $this->serverInfo($data->headers);
@@ -385,7 +409,7 @@ readonly class PrintData
         return $info;
     }    
 
-    private function parseSslName(string $name, string $field)
+    private function parseSslName(string $name, string $field): string
     {
         $re = '/([^\s=]+)\s*=\s*([^,]*)/';                                                                      
         $str = $name;
@@ -524,7 +548,7 @@ readonly class PrintData
         }
         $speed = colorLog($this->human_readable_bytes($data->speed_download, 2) . '/s', 'w');
 
-        $info = "Content type:\t" . $type . $charset;
+        $info = "Content type:\t" . $type . ($charset ?? '');
         if (isset($data->headers->content_encoding)) {
             $encoding = match ($data->headers->content_encoding) {
                 'gzip'      => colorLog('gzip', 'w') . ' (LZ77 with CRC)',
@@ -596,7 +620,6 @@ readonly class PrintData
         $info .= " transfer time " . $transfer;
         $info .= " total time " . $totaltime;
         return $info . PHP_EOL;
-
     }
 
 }
@@ -665,6 +688,6 @@ try {
         $print = new PrintData($data->curlinfo);
     } while (isset($print->isRedirect));
     $time->total();
-} catch (Exception $e) {
-    echo $e->getMessage() . PHP_EOL;
+} catch (MyException $e) {
+    $error->print($e->getMessage());
 }
