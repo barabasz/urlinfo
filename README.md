@@ -12,20 +12,20 @@ Arguments:
 
 Options:
 
-    -b or --body       show body (only for unencoded text/plain content)
-    -c or --curlinfo   print verbose cURL info (without SSL info)
-    -f or --forcessl   ignore SSL errors
-    -H or --help       print this info and exit
-    -h or --headers    print verbose response headers (without cookies and CSP)
-    -i or --ipinfo     print verbose ipinfo
-    -m or --mute       mute standard output
-    -p or --plaintext  force plain text content response
-    -v or --version    print version and exit
+    -b      show body (only for unencoded text/plain content) 
+    -c      print verbose cURL info (without SSL info)
+    -f      ignore SSL errors
+    -H      print this info and exit
+    -h      print verbose response headers (without cookies and CSP)
+    -i      print verbose ipinfo
+    -m      mute standard output
+    -p      force plain text content response
+    -t      show script execution time
+    -v      print version and exit
 
 ## Output Example
 
 ![Example of utlinfo output](https://raw.githubusercontent.com/barabasz/urlinfo/main/example.png)
-
 
 ## TTFB (Time to First Byte)
 
