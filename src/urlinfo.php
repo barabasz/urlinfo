@@ -1,8 +1,18 @@
 <?php
+/**
+ * Simple PHP CLI wrapper around cURL
+ * @package barabasz/urlinfo
+ * @author Andrzej Barabasz <cellog@php.net>
+ * @link https://github.com/barabasz/urlinfo
+ * @version 1.0.2
+ */
+
 namespace barabasz\UrlInfo;
 
+use Exception;
+
 define("DEFAULT_SCHEME", "https");
-define("VERSION", "1.0.1");
+define("VERSION", "1.0.2");
 define("TIMEOUT", 2000);
 define("MIN_PHP_VER", 8.2);
 define("DATE_TIME", 'Y-m-d H:i e');
@@ -14,6 +24,7 @@ define("USER_BROWSER", "Chrome/115.0.0.0 Safari/537.36");
 define("USER_AGENT", USER_SYSTEM . " " . USER_PLATFORM . " " . USER_BROWSER);
 define("IPINFO_TOKEN", "");
 
+/** @package barabasz\UrlInfo */
 class Time
 {
 	public int $started;
@@ -30,15 +41,20 @@ class Time
 		global $params;
 		if ($params->time) echo $this->total();
 	}
-	
+
+	/**
+	 * Calculate script's total running time
+	 * @return string 
+	 */
 	public function total(): string
 	{
 		$this->finished = hrtime(true);
 		$this->elapsed = (int)(($this->finished - $this->started) / 1000);
-		return colorLog("Script time:\t" . human_readable_microseconds($this->elapsed), 'c') . PHP_EOL;
+		return colorLog("Script time:\t" . hrm($this->elapsed), 'c') . PHP_EOL;
 	}
 }
 
+/** @package barabasz\UrlInfo */
 readonly class Errors
 {
 	private string $error_message;
@@ -46,14 +62,14 @@ readonly class Errors
 	public function error(string $error_type): void
 	{
 		match ($error_type) {
-			'VERSION' => $this->error_message = "SiteSpeed version " . VERSION,
+			'VERSION' => $this->error_message = "URLInfo version " . VERSION,
 			'ONLY_ONE_ARGUMENT' => $this->error_message = "Too many arguments. Use -H for help.",
 			'NO_ARGUMENT' => $this->error_message = "No URL specified. Use -H for help.",
 			'INVALID_URL' => $this->error_message = "Incorrect URL.",
 			'INVALID_SCHEME' => $this->error_message = "Only " . colorLog("http://", "i") . " and " . colorLog("https://", "i") . " schemes are allowed.",
 			'CANNOT_PARSE_URL' => $this->error_message = "Cannot parse url.",
 			'HELP' => $this->error_message = <<< HELP
-			Usage: urlinfo [options] URL
+			Usage: php urlinfo.php [options] URL
 			
 			Argument:
 				URL     url to request
@@ -65,9 +81,9 @@ readonly class Errors
 				-h      print verbose response headers (without cookies and CSP)
 				-i      print verbose ipinfo
 				-m      mute standard output
-				-p      force plain text content response
+				-p      force plain text content response (consider using with -b)
 				-t      show script execution time
-				-v      print version and exit")
+				-v      print version and exit
 			HELP,
 			default => $this->error_message = $error_type,
 		};
@@ -81,6 +97,7 @@ readonly class Errors
 
 }
 
+/** @package barabasz\UrlInfo */
 readonly class Params
 { 
 	public string $url;
@@ -95,6 +112,11 @@ readonly class Params
 	public bool $time;
 	public bool $version;
 
+	/**
+	 * Read options/argument from CLI and assign internal flags
+	 * @return void 
+	 * @throws Exception 
+	 */
 	public function __construct()
 	{
 		global $argv;
@@ -130,6 +152,7 @@ readonly class Params
 	}
 }
 
+/** @package barabasz\UrlInfo */
 readonly class Url
 {
 
@@ -162,11 +185,19 @@ readonly class Url
 
 }
 
+/** @package barabasz\UrlInfo */
 class CurlData
 {
 	public object $curlinfo;
 	public object $headers;
 
+	/**
+	 * @global Error $error
+	 * @global Params $params
+	 * @param string $url 
+	 * @return void 
+	 * @throws Exception 
+	 */
 	public function __construct(string $url)
 	{
 		global $error, $params;
@@ -218,6 +249,12 @@ class CurlData
 		}
 	}
 
+	/**
+	 * Create object from response headers
+	 * @param string $response 
+	 * @param int $header_size 
+	 * @return void 
+	 */
 	private function get_headers_arr(string $response, int $header_size): void
 	{
 		$headers = substr($response, 0, $header_size);
@@ -231,12 +268,23 @@ class CurlData
 		}
 	}
 
+	/**
+	 * Extract body from curl response
+	 * @param string $response 
+	 * @param int $header_size 
+	 * @return void 
+	 */
 	private function get_body(string $response, int $header_size): void
 	{
 		$body = substr($response, $header_size);
 		$this->curlinfo->body = $body;
 	}
 
+	/**
+	 * Get IP info (via ipinfo.io API)
+	 * @param string $ip 
+	 * @return void 
+	 */
 	private function get_ipinfo(string $ip): void
 	{
 		$ipinfo_url = "https://ipinfo.io/" . $ip . "?token=" . IPINFO_TOKEN;
@@ -249,6 +297,7 @@ class CurlData
 	}
 }
 
+/** @package barabasz\UrlInfo */
 readonly class PrintData
 {
 	public bool $isRedirect;
@@ -284,6 +333,11 @@ readonly class PrintData
 		}
 	}
 
+	/**
+	 * Prepare additional output (cURL data, headers, IPinfo response and body)
+	 * @param object $data 
+	 * @return string|bool 
+	 */
 	private function verboseInfo(object $data): string|bool
 	{
 		global $params;
@@ -319,6 +373,11 @@ readonly class PrintData
 		return $info;
 	}
 
+	/**
+	 * Format IP info
+	 * @param mixed $data 
+	 * @return string 
+	 */
 	private function ipinfoInfo($data): string
 	{
 		$info = "IP info:\t";
@@ -339,6 +398,11 @@ readonly class PrintData
 		return $info . PHP_EOL;
 	}
 
+	/**
+	 * Format server info
+	 * @param object $data 
+	 * @return string|bool 
+	 */
 	private function serverInfo(object $data): string|bool
 	{
 		if (isset($data->server) || isset($data->date)) {
@@ -351,6 +415,11 @@ readonly class PrintData
 		}
 	}
 
+	/**
+	 * Format proxy info
+	 * @param object $data 
+	 * @return string|bool 
+	 */
 	private function proxyInfo(object $data): string|bool
 	{
 		if (isset($data->via)) {
@@ -362,6 +431,11 @@ readonly class PrintData
 		}
 	}
 
+	/**
+	 * Format server flags
+	 * @param object $data 
+	 * @return string|bool 
+	 */
 	private function serverFlags(object $data): string|bool
 	{
 		if (isset($data->strict_transport_security) || isset($data->x_frame_options)) {
@@ -374,6 +448,11 @@ readonly class PrintData
 		}
 	}
 
+	/**
+	 * Format cache info
+	 * @param object $data 
+	 * @return string|bool 
+	 */
 	private function cacheInfo(object $data): string|bool
 	{
 		if (isset($data->cache_control) || isset($data->pragma)) {
@@ -386,6 +465,11 @@ readonly class PrintData
 		}
 	}
 
+	/**
+	 * Format connection info
+	 * @param object $data 
+	 * @return string 
+	 */
 	private function connectionInfo(object $data): string
 	{
 		$info = "Connection:\t";
@@ -401,6 +485,12 @@ readonly class PrintData
 		return $info;
 	}
 
+	/**
+	 * Extract data from SSL info
+	 * @param string $name 
+	 * @param string $field 
+	 * @return string 
+	 */
 	private function parseSslName(string $name, string $field): string
 	{
 		$re = '/([^\s=]+)\s*=\s*([^,]*)/';
@@ -416,6 +506,11 @@ readonly class PrintData
 		return $arr[$field];
 	}
 	
+	/**
+	 * Formal SSL info
+	 * @param object $data 
+	 * @return string 
+	 */
 	private function sslInfo(object $data): string
 	{
 		$subject = colorLog($this->parseSslName($data->certinfo[0]["Subject"], 'CN'), "w");
@@ -433,12 +528,22 @@ readonly class PrintData
 		return $info;
 	}
 
+	/**
+	 * Format request info
+	 * @param object $data 
+	 * @return string 
+	 */
 	private function requestInfo(object $data): string
 	{
 		$requestedUrl = (strlen($data->url) > 80) ? substr($data->url, 0, 80) . "[...]" : $data->url;
 		return "Request:\t" . $data->effective_method . ": " . colorLog($requestedUrl, "l") . PHP_EOL;
 	}
 
+	/**
+	 * Format response info
+	 * @param object $data 
+	 * @return string 
+	 */
 	private function responseInfo(object $data): string
 	{
 		$response = "Response:\t";
@@ -466,21 +571,11 @@ readonly class PrintData
 		return $response . PHP_EOL;
 	}
 
-	private function human_readable_bytes(int $bytes, int $decimals = 2, $system = 'binary'): string
-	{
-		$mod = ($system === 'binary') ? 1024 : 1000;
-		if ($bytes > $mod) {
-			$units = array(
-				'binary' => array('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB','YiB',),
-				'metric' => array('B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB',),
-			);
-			$factor = floor((strlen($bytes) - 1) / 3);
-			return sprintf("%.{$decimals}f %s", $bytes / pow($mod, $factor), $units[$system][$factor]);
-		} else {
-			return "$bytes B";
-		}
-	}
-
+	/**
+	 * Format content info
+	 * @param object $data 
+	 * @return string 
+	 */
 	private function contentInfo(object $data): string
 	{
 		global $params;
@@ -499,11 +594,11 @@ readonly class PrintData
 		}
 
 		if ($data->size_download > 1000) {
-			$size = colorLog($this->human_readable_bytes($data->size_download, 2), 'w');
+			$size = colorLog(hrb($data->size_download, 2), 'w');
 		} else {
-			$size = colorLog($this->human_readable_bytes($data->size_download, 2), 'be');
+			$size = colorLog(hrb($data->size_download, 2), 'be');
 		}
-		$speed = colorLog($this->human_readable_bytes($data->speed_download, 2) . '/s', 'w');
+		$speed = colorLog(hrb($data->speed_download, 2) . '/s', 'w');
 
 		$info = "Content type:\t" . $type . ($charset ?? '');
 		if (isset($data->headers->content_encoding)) {
@@ -524,6 +619,11 @@ readonly class PrintData
 		return $info;
 	}
 
+	/**
+	 * Format speed info (lookup, handshakes, transfers)
+	 * @param object $data 
+	 * @return string 
+	 */
 	private function speedInfo(object $data): string
 	{
 		$namelookup    = $data->namelookup_time_us;
@@ -539,30 +639,30 @@ readonly class PrintData
 		$transfer      = $totaltime - $starttransfer;
 
 		if ($namelookup > 100000) {
-			$namelookup = colorLog(human_readable_microseconds($namelookup), 'be');
+			$namelookup = colorLog(hrm($namelookup), 'be');
 		} else {
-			$namelookup = colorLog(human_readable_microseconds($namelookup), 'w');
+			$namelookup = colorLog(hrm($namelookup), 'w');
 		}
 
 		if ($tcphandshake > 200000) {
-			$tcphandshake = colorLog(human_readable_microseconds($tcphandshake), 'be');
+			$tcphandshake = colorLog(hrm($tcphandshake), 'be');
 		} else {
-			$tcphandshake = colorLog(human_readable_microseconds($tcphandshake), 'w');
+			$tcphandshake = colorLog(hrm($tcphandshake), 'w');
 		}
 
 		if ($sslhandshake > 200000) {
-			$sslhandshake = colorLog(human_readable_microseconds($sslhandshake), 'be');
+			$sslhandshake = colorLog(hrm($sslhandshake), 'be');
 		} else {
-			$sslhandshake = colorLog(human_readable_microseconds($sslhandshake), 'w');
+			$sslhandshake = colorLog(hrm($sslhandshake), 'w');
 		}
 
 		if ($ttfb > 500000) {
-			$ttfb = colorLog(human_readable_microseconds($ttfb), 'be');
+			$ttfb = colorLog(hrm($ttfb), 'be');
 		} else {
-			$ttfb = colorLog(human_readable_microseconds($ttfb), 'w');
+			$ttfb = colorLog(hrm($ttfb), 'w');
 		}
-		$transfer = colorLog(human_readable_microseconds($transfer), 'w');
-		$totaltime = colorLog(human_readable_microseconds($totaltime), 'w');
+		$transfer = colorLog(hrm($transfer), 'w');
+		$totaltime = colorLog(hrm($totaltime), 'w');
 
 		$info = "Pretransfer:\t";
 		$info .= "DNS lookup " . $namelookup;
@@ -580,11 +680,17 @@ readonly class PrintData
 	}
 }
 
-/*
-ADDITIONAL FUNCTIONS
-*/
+/**
+ * AUXILIARY FUNCTIONS
+ */
 
-function human_readable_microseconds(int $microseconds): string
+/**
+ * hrm - Human Readable Microseconds
+ * Convert microseconds into μs / ms / s
+ * @param int $microseconds
+ * @return string 
+ */
+function hrm(int $microseconds): string
 {
 	$decimals = match (true) {
 		$microseconds > 1000000 => 2,
@@ -596,6 +702,34 @@ function human_readable_microseconds(int $microseconds): string
 	return sprintf("%.{$decimals}f %s", $microseconds / pow(1000, $factor), $units[$factor]);
 }
 
+/**
+ * hmb - Human Readable Bytes
+ * Convert bytes into multiple binary/metric units
+ * @param int $bytes 
+ * @param int $decimals 
+ * @param string $system 
+ * @return string 
+ */
+function hrb(int $bytes, int $decimals = 2, $system = 'binary'): string
+{
+	$mod = ($system === 'binary') ? 1024 : 1000;
+	if ($bytes > $mod) {
+		$units = array(
+			'binary' => array('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB','YiB',),
+			'metric' => array('B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB',),
+		);
+		$factor = floor((strlen($bytes) - 1) / 3);
+		return sprintf("%.{$decimals}f %s", $bytes / pow($mod, $factor), $units[$system][$factor]);
+	} else {
+		return "$bytes B";
+	}
+}
+
+/**
+ * Simple function for printing objects
+ * @param object $obj 
+ * @return string 
+ */
 function parse_object(object $obj): string
 {
 	$output = '';
@@ -606,6 +740,13 @@ function parse_object(object $obj): string
 	return $output;
 }
 
+
+/**
+ * Color CLI output with ANSI escape sequences 
+ * @param string $str 
+ * @param string $type 
+ * @return string 
+ */
 function colorLog(string $str, string $type = 'i'): string
 {
 	$bold   = "\033[1m";
